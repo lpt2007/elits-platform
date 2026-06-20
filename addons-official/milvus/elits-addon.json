@@ -1,0 +1,47 @@
+{
+  "slug": "milvus",
+  "name": "Milvus Vector Database",
+  "version": "2.4.0",
+  "description": "Vektorska baza za RAG in Hermesov dolgoročni spomin",
+  "url": "https://milvus.io",
+  "image": "milvusdb/milvus:v2.4.0",
+
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "arch": ["amd64"],
+
+  "command": [
+    "milvus", "run", "standalone"
+  ],
+
+  "ports": {
+    "19530/tcp": 19530,
+    "9091/tcp": 9091
+  },
+
+  "environment": {
+    "ETCD_ENDPOINTS": "31.3.77.6:2379",
+    "MINIO_ADDRESS": "31.3.77.7:9000"
+  },
+
+  "volumes": {
+    "/data/elits/milvus/data": { "bind": "/var/lib/milvus", "mode": "rw" },
+    "/data/elits/milvus/logs": { "bind": "/var/log/milvus", "mode": "rw" }
+  },
+
+  "network": "elits-net",
+  "ip_address": "31.3.77.5",
+
+  "memory_limit": "4G",
+  "cpu_limit": 2,
+
+  "web_ui": {
+    "path": "/",
+    "title": "Milvus",
+    "icon": "mdi:database"
+  },
+
+  "dependencies": ["etcd", "minio"],
+  "stage": "stable"
+}

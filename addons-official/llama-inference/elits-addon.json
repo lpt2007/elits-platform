@@ -1,0 +1,53 @@
+{
+  "slug": "llama-inference",
+  "name": "Qwen AI Inference",
+  "version": "0.1.0",
+  "description": "35B MoE z TurboQuant optimizacijami (video setup - ngl 99, CUDA 11.8)",
+  "url": "https://github.com/lpt2007/elits-platform",
+  "image": "nvidia/cuda:11.8.0-devel-ubuntu22.04",
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "arch": ["amd64"],
+  "command": [
+    "./build/bin/llama-server",
+    "-m", "/root/models/qwen3-35b-a3b.Q4_K_M.gguf",
+    "--port", "8080",
+    "--host", "0.0.0.0",
+    "-ngl", "99",
+    "--n-cpu-moe", "36",
+    "--no-mmap",
+    "--mlock",
+    "--cache-type-k", "turbo4",
+    "--cache-type-v", "turbo3",
+    "--jinja",
+    "-c", "256000",
+    "-t", "20"
+  ],
+  "working_dir": "/root/llama-cpp-turboquant",
+  "ports": { "8080/tcp": 8080 },
+  "environment": {
+    "API_KEY": "elits-secure-key-2026",
+    "HASSIO_TOKEN": "{{SUPERVISOR_TOKEN}}",
+    "HASSIO": "31.3.77.1"
+  },
+  "volumes": {
+    "/root": { "bind": "/root", "mode": "rw" },
+    "/data/elits/models": { "bind": "/root/models", "mode": "ro" },
+    "/data/elits/share": { "bind": "/share", "mode": "rw" }
+  },
+  "network": "elits-net",
+  "ip_address": "31.3.77.3",
+  "gpu": true,
+  "memory_limit": "24G",
+  "cpu_limit": 24,
+  "cap_add": ["IPC_LOCK"],
+  "ulimits": { "memlock": -1 },
+  "web_ui": {
+    "path": "/",
+    "title": "AI Inference Monitor",
+    "icon": "mdi:brain"
+  },
+  "dependencies": [],
+  "stage": "experimental"
+}

@@ -1,0 +1,41 @@
+{
+  "slug": "hermes-ai",
+  "name": "Hermes AI Agent",
+  "version": "1.0.0",
+  "description": "Nous Research AI Agent z lokalnim LLM in Milvus memory",
+  "url": "https://github.com/NousResearch/hermes-agent",
+  "image": "nousresearch/hermes-agent:latest",
+
+  "startup": "application",
+  "boot": "auto",
+  "init": false,
+  "arch": ["amd64"],
+
+  "command": ["/bin/bash", "-c", "source /opt/hermes/.venv/bin/activate && hermes dashboard --host 0.0.0.0 --port 9119 --insecure --no-open"],
+
+  "ports": {
+    "9119/tcp": 9119,
+    "5000/tcp": 5000
+  },
+
+  "environment": {},
+
+  "volumes": {
+    "/data/elits/hermes-ai/data": { "bind": "/opt/data", "mode": "rw" }
+  },
+
+  "network": "elits-net",
+  "ip_address": "31.3.77.4",
+
+  "memory_limit": "8G",
+  "cpu_limit": 4,
+
+  "web_ui": {
+    "path": "/",
+    "title": "Hermes Agent Dashboard",
+    "icon": "mdi:brain-cog"
+  },
+
+  "dependencies": ["llama-inference", "milvus"],
+  "stage": "stable"
+}
