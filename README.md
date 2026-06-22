@@ -1,2 +1,10 @@
-# elits-platform
-Unified AI &amp; Infrastructure Platform with Addon Ecosystem
+# Elits Platform
+
+Modern open-source platform for managing AI agents and services.
+
+## Features
+- Web UI (React + Mantine)
+- Supervisor API (FastAPI)
+- Addon System
+- System Monitoring
+- Ingress Proxy
