@@ -12,9 +12,9 @@
 
 Vsebuje:
 - **core/** - Glavne komponente sistema:
-  -  - Python backend (addon management)
-  -  - React frontend (Mantine UI)
-  -  - Python backend (system monitoring)
+  - `supervisor/` - Python backend (addon management)
+  - `webui/` - React frontend (Mantine UI)
+  - `observer/` - Python backend (system monitoring)
 - **system-containers/** - Pomožni sistemski kontejnerji (DNS, CLI, itd.)
 - **scripts/** - Deployment in maintenance skripte
 - **docs/** - Dokumentacija
