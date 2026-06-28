@@ -1,0 +1,468 @@
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+import docker
+import json
+from pathlib import Path
+from pydantic import BaseModel
+from typing import List, Dict, Optional
+import logging
+import requests
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+app = FastAPI(title="Elits Supervisor", version="0.3.0")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Inicializiraj Docker client kasneje
+client = None
+
+def get_docker_client():
+    global client
+    if client is None:
+        try:
+            client = docker.from_env()
+            logger.info("✅ Docker client initialized")
+        except Exception as e:
+            logger.error(f"❌ Failed to initialize Docker client: {e}")
+            raise
+    return client
+
+ADDONS_DIR = Path("/data/elits/addons")
+OFFICIAL_ADDONS_DIR = Path("/opt/elits/addons")
+GITHUB_REPO = "lpt2007/elits-platform-addons"
+
+class AddonStatus(BaseModel):
+    slug: str
+    name: str
+    state: str
+    status: str
+    version: str
+    ports: Dict[str, int] = {}
+    created_at: str
+    started_at: str
+    updated_at: str
+    manifest: Optional[Dict] = None
+
+class AddonManifest(BaseModel):
+    name: str
+    version: str
+    slug: str
+    description: str
+    category: str
+    url: str
+    repository: str
+    arch: List[str]
+    init: bool
+    ports: Dict[str, int]
+    environment: Dict[str, str]
+    volumes: Dict[str, str]
+    image: str
+    stage: str
+
+def load_manifest(slug: str, repo_dir: Path) -> Optional[AddonManifest]:
+    manifest_path = repo_dir / slug / "elits-addon.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path) as f:
+                data = json.load(f)
+                return AddonManifest(**data)
+        except Exception as e:
+            logger.error(f"Error loading manifest for {slug}: {e}")
+    return None
+
+def fetch_github_addons() -> List[Dict]:
+    """Fetch addons from GitHub repository"""
+    try:
+        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
+        response = requests.get(url, timeout=10)
+        
+        if response.status_code != 200:
+            logger.error(f"GitHub API error: {response.status_code}")
+            return []
+        
+        addons = []
+        for item in response.json():
+            if item['type'] == 'dir':
+                slug = item['name']
+                manifest_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{slug}/elits-addon.json"
+                manifest_response = requests.get(manifest_url, timeout=10)
+                
+                if manifest_response.status_code == 200:
+                    import base64
+                    content = base64.b64decode(manifest_response.json()['content']).decode('utf-8')
+                    manifest_data = json.loads(content)
+                    addons.append(manifest_data)
+        
+        return addons
+    except Exception as e:
+        logger.error(f"Error fetching GitHub addons: {e}")
+        return []
+
+def compare_versions(v1: str, v2: str) -> int:
+    """Compare two semantic versions. Returns -1, 0, or 1"""
+    try:
+        if v1 == 'latest' or v2 == 'latest':
+            return 0
+        
+        parts1 = [int(x) for x in v1.split('.')]
+        parts2 = [int(x) for x in v2.split('.')]
+        
+        for p1, p2 in zip(parts1, parts2):
+            if p1 < p2:
+                return -1
+            elif p1 > p2:
+                return 1
+        return 0
+    except:
+        return 0
+
+SYSTEM_CONTAINERS = ['supervisor', 'supervisor_test', 'webui', 'webui_test', 'dns', 'observer', 'cli']
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize Docker client on startup"""
+    try:
+        get_docker_client()
+    except Exception as e:
+        logger.error(f"Failed to initialize Docker client: {e}")
+
+@app.get("/api/addons")
+async def list_addons():
+    docker_client = get_docker_client()
+    addons = []
+    for container in docker_client.containers.list(all=True):
+        if container.name.startswith('elits_'):
+            slug = container.name.replace('elits_', '')
+            if slug in SYSTEM_CONTAINERS:
+                continue
+            
+            manifest = None
+            manifest_dict = None
+            for repo_dir in [ADDONS_DIR, OFFICIAL_ADDONS_DIR]:
+                manifest = load_manifest(slug, repo_dir)
+                if manifest:
+                    manifest_dict = manifest.dict()
+                    break
+
+            addons.append(AddonStatus(
+                slug=slug,
+                name=manifest.name if manifest else slug,
+                state=container.status,
+                status="healthy" if container.status == "running" else "stopped",
+                version=manifest.version if manifest else "unknown",
+                ports={str(k): v for k, v in manifest.ports.items()} if manifest else {},
+                created_at=container.attrs.get('Created'),
+                started_at=container.attrs.get('State', {}).get('StartedAt'),
+                updated_at=container.attrs.get('State', {}).get('StartedAt'),
+                manifest=manifest_dict,
+            ))
+    return addons
+
+@app.get("/api/addons/{slug}")
+async def get_addon(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        manifest = None
+        for repo_dir in [ADDONS_DIR, OFFICIAL_ADDONS_DIR]:
+            manifest = load_manifest(slug, repo_dir)
+            if manifest:
+                break
+        
+        return {
+            "slug": slug,
+            "name": manifest.name if manifest else slug,
+            "state": container.status,
+            "status": "healthy" if container.status == "running" else "stopped",
+            "version": manifest.version if manifest else "unknown",
+            "ports": {str(k): v for k, v in manifest.ports.items()} if manifest else {},
+            "created_at": container.attrs.get('Created'),
+            "started_at": container.attrs.get('State', {}).get('StartedAt'),
+            "updated_at": container.attrs.get('State', {}).get('StartedAt'),
+            "manifest": manifest.dict() if manifest else None,
+        }
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.post("/api/addons/{slug}/start")
+async def start_addon(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        container.start()
+        return {"status": "started", "slug": slug}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.post("/api/addons/{slug}/stop")
+async def stop_addon(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        container.stop()
+        return {"status": "stopped", "slug": slug}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.post("/api/addons/{slug}/restart")
+async def restart_addon(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        container.restart()
+        return {"status": "restarted", "slug": slug}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.post("/api/addons/{slug}/uninstall")
+async def uninstall_addon(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        container.stop()
+        container.remove()
+        return {"status": "uninstalled", "slug": slug}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.get("/api/addons/{slug}/logs")
+async def get_addon_logs(slug: str):
+    docker_client = get_docker_client()
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        logs = container.logs(tail=100).decode('utf-8')
+        return {"logs": logs.split('\n')}
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+
+@app.get("/api/store")
+async def get_store():
+    """Get addons from GitHub repository"""
+    docker_client = get_docker_client()
+    github_addons = fetch_github_addons()
+    
+    for addon in github_addons:
+        try:
+            container = docker_client.containers.get(f"elits_{addon['slug']}")
+            addon['installed'] = True
+        except docker.errors.NotFound:
+            addon['installed'] = False
+    
+    return github_addons
+
+@app.post("/api/store/install")
+async def install_addon(request: dict):
+    docker_client = get_docker_client()
+    slug = request.get('slug')
+    
+    github_addons = fetch_github_addons()
+    manifest_data = next((a for a in github_addons if a['slug'] == slug), None)
+    
+    if not manifest_data:
+        raise HTTPException(status_code=404, detail="Addon not found in GitHub repository")
+    
+    try:
+        container = docker_client.containers.get(f"elits_{slug}")
+        raise HTTPException(status_code=400, detail="Addon already installed")
+    except docker.errors.NotFound:
+        pass
+    
+    try:
+        container = docker_client.containers.run(
+            manifest_data['image'],
+            name=f"elits_{slug}",
+            detach=True,
+            ports=manifest_data.get('ports', {}),
+            environment=manifest_data.get('environment', {}),
+            volumes=manifest_data.get('volumes', {}),
+            restart_policy={"Name": "unless-stopped"},
+        )
+        return {"status": "installed", "slug": slug, "container_id": container.id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/updates")
+async def check_updates():
+    """Check for addon updates from GitHub"""
+    docker_client = get_docker_client()
+    updates = []
+    
+    github_addons = fetch_github_addons()
+    
+    for container in docker_client.containers.list(all=True):
+        if container.name.startswith('elits_'):
+            slug = container.name.replace('elits_', '')
+            if slug in SYSTEM_CONTAINERS:
+                continue
+            
+            manifest = None
+            for repo_dir in [ADDONS_DIR, OFFICIAL_ADDONS_DIR]:
+                manifest = load_manifest(slug, repo_dir)
+                if manifest:
+                    break
+            
+            if not manifest:
+                continue
+            
+            github_addon = next((a for a in github_addons if a['slug'] == slug), None)
+            
+            if github_addon:
+                installed_version = manifest.version
+                available_version = github_addon['version']
+                update_available = compare_versions(installed_version, available_version) < 0
+                
+                updates.append({
+                    "slug": slug,
+                    "name": manifest.name,
+                    "description": manifest.description,
+                    "category": manifest.category,
+                    "current_version": installed_version,
+                    "available_version": available_version,
+                    "update_available": update_available,
+                    "installed": True,
+                    "stage": manifest.stage,
+                    "repository": manifest.repository
+                })
+    
+    return updates
+
+@app.get("/api/system/info")
+async def get_system_info():
+    docker_client = get_docker_client()
+    return {
+        "version": "0.3.0",
+        "addons_count": len(docker_client.containers.list(filters={"name": "elits_"})),
+        "docker_version": docker_client.version()['Version'],
+        "github_repo": GITHUB_REPO,
+    }
+
+async def get_system_stats():
+    import psutil
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=1),
+        "memory": {
+            "total": psutil.virtual_memory().total,
+            "available": psutil.virtual_memory().available,
+            "percent": psutil.virtual_memory().percent
+        },
+        "disk": {
+            "total": psutil.disk_usage("/").total,
+            "used": psutil.disk_usage("/").used,
+            "percent": psutil.disk_usage("/").percent
+        }
+    }
+
+
+async def get_system_stats():
+    """Get system statistics"""
+    import psutil
+    return {
+        "cpu_percent": psutil.cpu_percent(interval=1),
+        "memory": {
+            "total": psutil.virtual_memory().total,
+            "available": psutil.virtual_memory().available,
+            "percent": psutil.virtual_memory().percent
+        },
+        "disk": {
+            "total": psutil.disk_usage("/").total,
+            "used": psutil.disk_usage("/").used,
+            "percent": psutil.disk_usage("/").percent
+        }
+    }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    logger.info("🚀 Elits Supervisor v0.3.0 starting on port 1977...")
+    uvicorn.run(app, host="0.0.0.0", port=1977)
+
+# Entity sistem
+ENTITIES = {}
+
+@app.get("/api/entities")
+async def get_entities():
+    """Get all entities"""
+    entities = {}
+    
+    # System entities
+    try:
+        system_stats = await get_system_stats()
+        entities['sensor.cpu_usage'] = {
+            'entity_id': 'sensor.cpu_usage',
+            'state': str(system_stats.get('cpu_percent', 0)),
+            'attributes': {
+                'unit_of_measurement': '%',
+                'friendly_name': 'CPU Usage',
+                'icon': 'mdi:cpu-64-bit'
+            }
+        }
+        
+        entities['sensor.memory_usage'] = {
+            'entity_id': 'sensor.memory_usage',
+            'state': str(system_stats.get('memory', {}).get('percent', 0)),
+            'attributes': {
+                'unit_of_measurement': '%',
+                'friendly_name': 'Memory Usage',
+                'icon': 'mdi:memory'
+            }
+        }
+        
+        entities['sensor.disk_usage'] = {
+            'entity_id': 'sensor.disk_usage',
+            'state': str(system_stats.get('disk', {}).get('percent', 0)),
+            'attributes': {
+                'unit_of_measurement': '%',
+                'friendly_name': 'Disk Usage',
+                'icon': 'mdi:harddisk'
+            }
+        }
+    except:
+        pass
+    
+    # Addon entities
+    try:
+        docker_client = get_docker_client()
+        for container in docker_client.containers.list(all=True):
+            if container.name.startswith('elits_'):
+                slug = container.name.replace('elits_', '')
+                if slug in SYSTEM_CONTAINERS:
+                    continue
+                
+                entities[f'switch.{slug}'] = {
+                    'entity_id': f'switch.{slug}',
+                    'state': 'on' if container.status == 'running' else 'off',
+                    'attributes': {
+                        'friendly_name': slug.replace('-', ' ').title(),
+                        'icon': 'mdi:application'
+                    }
+                }
+    except:
+        pass
+    
+    return entities
+
+@app.post("/api/entities/{entity_id}")
+async def update_entity(entity_id: str, request: dict):
+    """Update entity state"""
+    if entity_id in ENTITIES:
+        ENTITIES[entity_id].update(request)
+        return ENTITIES[entity_id]
+    raise HTTPException(status_code=404, detail="Entity not found")
+
+@app.post("/api/entities")
+async def create_entity(request: dict):
+    """Create new entity"""
+    entity_id = request.get('entity_id')
+    if not entity_id:
+        raise HTTPException(status_code=400, detail="entity_id required")
+    
+    ENTITIES[entity_id] = request
+    return request
