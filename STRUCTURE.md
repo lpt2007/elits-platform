@@ -1,7 +1,7 @@
 # Elits Platform - Dogovorjena struktura
 
 **Datum dogovora:** 2026-06-24  
-**Verzija dokumenta:** 1.0.0
+**Verzija dokumenta:** 1.1.0
 
 ---
 
@@ -23,14 +23,14 @@ Vsebuje:
 **URL:** https://github.com/lpt2007/elits-platform-addons
 
 Vsebuje:
-- **System addons** (Elits Platform jih potrebuje):
-  - hermes-ai/ - AI agent
-  - minio/ - Object storage
-  - milvus/ - Vector database
-  - etcd/ - Key-value store
-  - llama-inference/ - AI inference
-  
-- **Non-system addons** (neodvisni):
+- **system/** - Sistemski addon-i (Elits Platform jih potrebuje):
+  - hermes-ai/ - AI agent z vision capabilities
+  - minio/ - Object storage (S3 compatible)
+  - milvus/ - Vector database za AI
+  - etcd/ - Key-value store za Milvus metadata
+  - llama-inference/ - AI model inference
+
+- **apps/** - Aplikacije (nesistemski addon-i):
   - aistorage/ - AI-powered components storage (v razvoju)
   - ostali prihodnji addon-i
 
@@ -42,19 +42,19 @@ Vsebuje:
     ├── elits-platform/              (git repo - glavni sistem)
     │   ├── webui/                  (React source)
     │   ├── supervisor/             (Python source)
-    │   ├── observer/               (Python source)
     │   ├── system-containers/
     │   ├── scripts/
-    │   ├── docs/
     │   └── STRUCTURE.md
     │
     ├── elits-platform-addons/      (git repo - vsi addon-i)
-    │   ├── hermes-ai/
-    │   ├── minio/
-    │   ├── milvus/
-    │   ├── etcd/
-    │   ├── llama-inference/
-    │   └── aistorage/
+    │   ├── system/                 (sistemski addon-i)
+    │   │   ├── hermes-ai/
+    │   │   ├── minio/
+    │   │   ├── milvus/
+    │   │   ├── etcd/
+    │   │   └── llama-inference/
+    │   └── apps/                   (nesistemski addon-i)
+    │       └── aistorage/
     │
     └── /data/                      (runtime data, NOT git)
         ├── elits-data/             (glavni podatki)
@@ -71,7 +71,9 @@ Vsebuje:
 2. **Ni kopiranja** iz začasnih map v git repo
 3. **Vsaka sprememba** = commit + push
 4. **Testiranje** = docker build + run iz git repozitorija
-5. **Addon-i** so vsi v elits-platform-addons (system + non-system)
+5. **Addon-i** so v elits-platform-addons:
+   - Sistemski addon-i v system/
+   - Nesistemski addon-i v apps/
 
 ### Verzioniranje:
 - Vsaka najmanjša sprememba poveča verzijo za 0.01
@@ -87,6 +89,8 @@ Vsebuje:
 - docs: - dokumentacija
 - chore: - vzdrževanje, verzija
 - refactor: - prestrukturiranje kode
+- feat(addon-name): - nova funkcionalnost v addon-u
+- fix(addon-name): - popravek napake v addon-u
 
 ---
 
@@ -157,6 +161,8 @@ Vsak addon v elits-platform-addons mora imeti:
 - **AI (Hermes)** mora biti vedno dostopen
 - **Varnost**: vse slike in podatki morajo biti zaščiteni
 - **Backup strategija**: dnevni backupi v /data/backup-data/
+- **Sistemski addon-i** so v system/ mapi
+- **Nesistemski addon-i** so v apps/ mapi
 
 ---
 
