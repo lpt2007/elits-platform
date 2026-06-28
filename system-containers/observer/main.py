@@ -89,6 +89,89 @@ async def system_logs():
         "images_count": len(client.images.list())
     }
 
+
+@app.get("/gpu")
+async def get_gpu_info():
+    """Get GPU information"""
+    import subprocess
+    
+    try:
+        # Uporabi CSV format ki je bolj zanesljiv
+        result = subprocess.run(
+            ['nvidia-smi', '--query-gpu=name,memory.total,memory.used,temperature.gpu,utilization.gpu,power.draw,power.limit', '--format=csv,noheader,nounits'],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if result.returncode == 0 and result.stdout.strip():
+            gpus = []
+            for line in result.stdout.strip().split('\n'):
+                parts = [p.strip() for p in line.split(',')]
+                if len(parts) >= 7:
+                    gpus.append({
+                        'name': parts[0],
+                        'memory_total': int(parts[1]),
+                        'memory_used': int(parts[2]),
+                        'temperature': int(parts[3]),
+                        'utilization': int(parts[4]),
+                        'power_draw': float(parts[5]),
+                        'power_limit': float(parts[6]),
+                    })
+            return {'gpus': gpus}
+        else:
+            return {'gpus': [], 'error': f'nvidia-smi failed: {result.stderr}'}
+    except Exception as e:
+        return {'gpus': [], 'error': str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=80)
+
+@app.get("/updates")
+async def check_updates():
+    """Check for addon updates"""
+    import json
+    from pathlib import Path
+    
+    updates = []
+    addons_dir = Path("/data/elits/addons")
+    
+    if addons_dir.exists():
+        for addon_dir in addons_dir.iterdir():
+            if addon_dir.is_dir():
+                manifest_path = addon_dir / "elits-addon.json"
+                if manifest_path.exists():
+                    try:
+                        with open(manifest_path) as f:
+                            manifest = json.load(f)
+                        
+                        # Preveri če je addon nameščen
+                        try:
+                            container = client.containers.get(f"elits_{manifest['slug']}")
+                            installed = True
+                            # Tukaj bi lahko preverili verzijo iz container labels
+                            installed_version = manifest.get('version', 'unknown')
+                        except:
+                            installed = False
+                            installed_version = None
+                        
+                        updates.append({
+                            "slug": manifest['slug'],
+                            "name": manifest['name'],
+                            "description": manifest.get('description', ''),
+                            "category": manifest.get('category', ''),
+                            "current_version": installed_version,
+                            "available_version": manifest.get('version', 'unknown'),
+                            "update_available": False,  # Zaenkrat vedno False
+                            "installed": installed,
+                            "stage": manifest.get('stage', 'stable'),
+                            "repository": manifest.get('repository', 'official')
+                        })
+                    except Exception as e:
+                        print(f"Error reading manifest for {addon_dir.name}: {e}")
+    
+    return updates
+
+

@@ -9,19 +9,18 @@ import { useState } from 'react'
 export default function Apps() {
   const navigate = useNavigate()
   const [search, setSearch] = useState('')
-  
+
   const { data: addons, refetch } = useQuery({
     queryKey: ['addons'],
     queryFn: () => axios.get('/api/addons').then(res => res.data),
   })
-  
-  const realAddons = addons?.filter(addon => addon.manifest) || []
-  
-  const filteredAddons = realAddons.filter(addon => 
-    addon.manifest?.name?.toLowerCase().includes(search.toLowerCase()) ||
+
+  // Ne filtriraj po manifest - prikaži vse addon-e
+  const filteredAddons = (addons || []).filter(addon =>
+    addon.name?.toLowerCase().includes(search.toLowerCase()) ||
     addon.slug?.toLowerCase().includes(search.toLowerCase())
   )
-  
+
   const startMutation = useMutation({
     mutationFn: (slug) => axios.post(`/api/addons/${slug}/start`),
     onSuccess: () => {
@@ -29,7 +28,7 @@ export default function Apps() {
       refetch()
     },
   })
-  
+
   const stopMutation = useMutation({
     mutationFn: (slug) => axios.post(`/api/addons/${slug}/stop`),
     onSuccess: () => {
@@ -37,7 +36,7 @@ export default function Apps() {
       refetch()
     },
   })
-  
+
   const restartMutation = useMutation({
     mutationFn: (slug) => axios.post(`/api/addons/${slug}/restart`),
     onSuccess: () => {
@@ -45,7 +44,7 @@ export default function Apps() {
       refetch()
     },
   })
-  
+
   return (
     <Container size="xl" py="xl" px="xl">
       <Group mb="lg">
@@ -54,7 +53,7 @@ export default function Apps() {
         </ActionIcon>
         <Title order={2}>Apps</Title>
       </Group>
-      
+
       <TextInput
         placeholder="Search"
         leftSection={<IconSearch size={16} />}
@@ -63,7 +62,7 @@ export default function Apps() {
         mb="lg"
         size="lg"
       />
-      
+
       {filteredAddons.length === 0 ? (
         <Card shadow="sm" p="xl" radius="md">
           <Group>
@@ -77,9 +76,9 @@ export default function Apps() {
       ) : (
         <SimpleGrid cols={3}>
           {filteredAddons.map(addon => (
-            <Card 
-              key={addon.slug} 
-              shadow="sm" 
+            <Card
+              key={addon.slug}
+              shadow="sm"
               p="lg"
               radius="md"
               style={{ cursor: 'pointer' }}
@@ -89,17 +88,17 @@ export default function Apps() {
                 <Group gap="sm">
                   <IconPackage size={28} />
                   <div>
-                    <Text fw={600}>{addon.manifest?.name || addon.name}</Text>
-                    <Text size="xs" c="dimmed">v{addon.manifest?.version || addon.version}</Text>
+                    <Text fw={600}>{addon.name}</Text>
+                    <Text size="xs" c="dimmed">v{addon.version}</Text>
                   </div>
                 </Group>
                 <Badge color={addon.state === 'running' ? 'green' : 'gray'} size="sm">{addon.state}</Badge>
               </Group>
-              
+
               <Text size="sm" c="dimmed" mb="md" lineClamp={2}>
-                {addon.manifest?.description || 'No description available'}
+                Status: {addon.status || 'unknown'}
               </Text>
-              
+
               <Group gap="xs" justify="flex-end" onClick={(e) => e.stopPropagation()}>
                 {addon.state === 'running' ? (
                   <>
@@ -120,7 +119,7 @@ export default function Apps() {
           ))}
         </SimpleGrid>
       )}
-      
+
       <Button
         style={{ position: 'fixed', bottom: 20, right: 20 }}
         size="lg"

@@ -2,14 +2,20 @@ import { Container, Title, Card, Text, Table, Group, ActionIcon, Grid, RingProgr
 import { useQuery } from '@tanstack/react-query'
 import axios from 'axios'
 import { useNavigate } from 'react-router-dom'
-import { IconArrowLeft, IconCpu, IconServer, IconDatabase } from '@tabler/icons-react'
+import { IconArrowLeft, IconCpu, IconServer, IconDatabase, IconDeviceGamepad } from '@tabler/icons-react'
 
 export default function Hardware() {
   const navigate = useNavigate()
-  
+
   const { data: systemStats } = useQuery({
     queryKey: ['system-stats'],
     queryFn: () => axios.get('/observer/system').then(res => res.data),
+    refetchInterval: 5000,
+  })
+
+  const { data: gpuInfo } = useQuery({
+    queryKey: ['gpu-info'],
+    queryFn: () => axios.get('/observer/gpu').then(res => res.data),
     refetchInterval: 5000,
   })
 
@@ -21,9 +27,9 @@ export default function Hardware() {
         </ActionIcon>
         <Title order={2}>Hardware</Title>
       </Group>
-      
+
       <Grid mb="lg">
-        <Grid.Col span={4}>
+        <Grid.Col span={3}>
           <Card shadow="sm" p="lg" radius="md">
             <Group justify="space-between">
               <div>
@@ -34,8 +40,8 @@ export default function Hardware() {
             </Group>
           </Card>
         </Grid.Col>
-        
-        <Grid.Col span={4}>
+
+        <Grid.Col span={3}>
           <Card shadow="sm" p="lg" radius="md">
             <Group justify="space-between">
               <div>
@@ -47,8 +53,8 @@ export default function Hardware() {
             </Group>
           </Card>
         </Grid.Col>
-        
-        <Grid.Col span={4}>
+
+        <Grid.Col span={3}>
           <Card shadow="sm" p="lg" radius="md">
             <Group justify="space-between">
               <div>
@@ -60,8 +66,34 @@ export default function Hardware() {
             </Group>
           </Card>
         </Grid.Col>
+
+        <Grid.Col span={3}>
+          <Card shadow="sm" p="lg" radius="md">
+            <Group justify="space-between">
+              <div>
+                <Text size="xs" c="dimmed" tt="uppercase" fw={700}>GPU</Text>
+                {gpuInfo?.gpus && gpuInfo.gpus.length > 0 ? (
+                  <>
+                    <Text fw={700} size="xl" mt="xs">{gpuInfo.gpus[0].name}</Text>
+                    <Text size="xs" c="dimmed" mt="xs">{gpuInfo.gpus[0].memory_used} / {gpuInfo.gpus[0].memory_total} MB</Text>
+                    <Text size="xs" c="dimmed">{gpuInfo.gpus[0].temperature}°C</Text>
+                  </>
+                ) : (
+                  <Text fw={700} size="xl" mt="xs" c="dimmed">No GPU</Text>
+                )}
+              </div>
+              <RingProgress 
+                size={80} 
+                thickness={8} 
+                roundCaps 
+                sections={[{ value: gpuInfo?.gpus?.[0]?.utilization || 0, color: 'violet' }]} 
+                label={<IconDeviceGamepad size={24} />} 
+              />
+            </Group>
+          </Card>
+        </Grid.Col>
       </Grid>
-      
+
       <Card shadow="sm" p="lg" radius="md">
         <Title order={4} mb="md">Network Statistics</Title>
         <Table>

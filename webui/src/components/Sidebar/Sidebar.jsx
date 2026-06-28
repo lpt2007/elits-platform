@@ -1,20 +1,40 @@
-import { Box, Group, Text, ActionIcon, Tooltip } from '@mantine/core'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Box, Group, Text, Divider } from '@mantine/core'
+import { useLocation, useNavigate } from 'react-router-dom'
 import {
   IconHome2,
   IconSettings,
-  IconMenu2,
-  IconX,
+  IconBell,
+  IconUser,
 } from '@tabler/icons-react'
 
-export default function Sidebar({ open, onToggle }) {
-  const navigate = useNavigate()
+export default function Sidebar() {
   const location = useLocation()
+  const navigate = useNavigate()
 
-  const menuItems = [
-    { icon: IconHome2, label: 'Dashboard', path: '/' },
-    { icon: IconSettings, label: 'Settings', path: '/settings' },
-  ]
+  const handleNavigate = (path) => {
+    navigate(path)
+  }
+
+  const MenuItem = ({ icon: Icon, label, path, active }) => (
+    <Group
+      onClick={() => handleNavigate(path)}
+      style={({ colors }) => ({
+        padding: '12px 16px',
+        cursor: 'pointer',
+        backgroundColor: active ? colors.dark[5] : 'transparent',
+        borderRadius: '8px',
+        margin: '4px 8px',
+        transition: 'background-color 0.2s',
+        '&:hover': {
+          backgroundColor: active ? colors.dark[5] : colors.dark[6],
+        },
+      })}
+      justify="flex-start"
+    >
+      <Icon size={20} color={active ? '#228be6' : 'white'} />
+      <Text c={active ? 'blue' : 'white'}>{label}</Text>
+    </Group>
+  )
 
   return (
     <Box
@@ -23,55 +43,55 @@ export default function Sidebar({ open, onToggle }) {
         left: 0,
         top: 0,
         bottom: 0,
-        width: open ? 200 : 60,
+        width: 200,
         backgroundColor: colors.dark[7],
         borderRight: `1px solid ${colors.dark[4]}`,
-        transition: 'width 0.3s ease',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
       })}
     >
-      <Group justify="space-between" p="md">
-        {open && <Text fw={700} c="white">Elits Platform</Text>}
-        <ActionIcon variant="transparent" onClick={onToggle} c="white">
-          {open ? <IconX size={20} /> : <IconMenu2 size={20} />}
-        </ActionIcon>
-      </Group>
+      {/* GORNJI DEL - Dashboard */}
+      <Box>
+        <Box p="md">
+          <Text fw={700} c="white" size="lg">Elits Platform</Text>
+        </Box>
+        
+        <MenuItem
+          icon={IconHome2}
+          label="Dashboard"
+          path="/"
+          active={location.pathname === '/'}
+        />
+      </Box>
 
-      <Box style={{ flex: 1 }}>
-        {menuItems.map((item) => {
-          const Icon = item.icon
-          const isActive = location.pathname === item.path
-          
-          const content = (
-            <Group
-              key={item.path}
-              onClick={() => navigate(item.path)}
-              style={({ colors }) => ({
-                padding: open ? '12px 16px' : '12px',
-                cursor: 'pointer',
-                backgroundColor: isActive ? colors.dark[5] : 'transparent',
-                borderRadius: '8px',
-                margin: open ? '4px 8px' : '4px',
-                transition: 'background-color 0.2s',
-                '&:hover': {
-                  backgroundColor: isActive ? colors.dark[5] : colors.dark[6],
-                },
-              })}
-              justify={open ? 'flex-start' : 'center'}
-            >
-              <Icon size={20} color={isActive ? '#228be6' : 'white'} />
-              {open && <Text c={isActive ? 'blue' : 'white'}>{item.label}</Text>}
-            </Group>
-          )
+      {/* SREDINA - prazen prostor z flex */}
+      <div style={{ flex: 1 }} />
 
-          return open ? content : (
-            <Tooltip key={item.path} label={item.label} position="right">
-              {content}
-            </Tooltip>
-          )
-        })}
+      {/* SPODNJI DEL - Settings, Notifications, User */}
+      <Box>
+        <Divider my="sm" />
+        
+        <MenuItem
+          icon={IconSettings}
+          label="Settings"
+          path="/settings"
+          active={location.pathname.startsWith('/settings')}
+        />
+
+        <MenuItem
+          icon={IconBell}
+          label="Notifications"
+          path="/notifications"
+          active={location.pathname === '/notifications'}
+        />
+
+        <MenuItem
+          icon={IconUser}
+          label="admin"
+          path="/profile"
+          active={location.pathname === '/profile'}
+        />
       </Box>
     </Box>
   )

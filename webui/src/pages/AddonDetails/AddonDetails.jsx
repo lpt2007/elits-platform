@@ -200,7 +200,7 @@ export default function AddonDetails() {
           <Card shadow="sm" p="lg" radius="md">
             <Title order={4} mb="md">Logs</Title>
             <Code block style={{ maxHeight: 400, overflow: 'auto', whiteSpace: 'pre-wrap', fontSize: '12px', backgroundColor: '#1a1b1e' }}>
-              {logs?.logs?.join('\n') || 'No logs available'}
+              {logs?.logs || 'No logs available'}
             </Code>
           </Card>
         </Tabs.Panel>

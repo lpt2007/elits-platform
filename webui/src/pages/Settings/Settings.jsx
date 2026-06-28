@@ -1,15 +1,9 @@
-import { Container, Title, Card, Text, Group, Box, Badge, Button, ActionIcon } from '@mantine/core'
+import { Container, Title, Card, Text, Group, Box, Badge, ActionIcon } from '@mantine/core'
 import { useNavigate } from 'react-router-dom'
 import { notifications } from '@mantine/notifications'
 import {
   IconApps,
   IconLayoutDashboard,
-  IconMicrophone,
-  IconHome,
-  IconNetwork,
-  IconDeviceDesktop,
-  IconRadio,
-  IconQrcode,
   IconUsers,
   IconSettings,
   IconTool,
@@ -21,7 +15,7 @@ import {
 
 function SettingsCard({ icon: Icon, title, description, path, color, underConstruction = false }) {
   const navigate = useNavigate()
-  
+
   const handleClick = () => {
     if (underConstruction) {
       notifications.show({
@@ -34,7 +28,7 @@ function SettingsCard({ icon: Icon, title, description, path, color, underConstr
       navigate(path)
     }
   }
-  
+
   return (
     <Box
       onClick={handleClick}
@@ -70,8 +64,8 @@ function SettingsCard({ icon: Icon, title, description, path, color, underConstr
 
 function SettingsSection({ title, children }) {
   return (
-    <Card 
-      shadow="sm" 
+    <Card
+      shadow="sm"
       p={0}
       mb="lg"
       radius="md"
@@ -92,12 +86,12 @@ function SettingsSection({ title, children }) {
 
 export default function Settings() {
   const navigate = useNavigate()
-  
+
   return (
     <Container size="md" py="xl" px="xl">
       <Group mb="xl">
-        <ActionIcon 
-          variant="transparent" 
+        <ActionIcon
+          variant="transparent"
           size="lg"
           onClick={() => navigate('/')}
         >
@@ -105,7 +99,7 @@ export default function Settings() {
         </ActionIcon>
         <Title order={2}>Settings</Title>
       </Group>
-      
+
       <SettingsSection>
         <SettingsCard
           icon={IconApps}
@@ -119,74 +113,18 @@ export default function Settings() {
           icon={IconLayoutDashboard}
           title="Dashboards"
           description="Organize how you interact with your platform"
-          path="/dashboard"
+          path="/settings/dashboards"
           color="#e64980"
-          underConstruction={true}
-        />
-        <Box style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginLeft: 64 }} />
-        <SettingsCard
-          icon={IconMicrophone}
-          title="Voice assistants"
-          description="Manage your voice assistants"
-          path="/settings/voice"
-          color="#228be6"
           underConstruction={true}
         />
       </SettingsSection>
 
-      <SettingsSection title="Integrations">
-        <SettingsCard
-          icon={IconHome}
-          title="Matter"
-          description="Cross-vendor smart home standard"
-          path="/settings/matter"
-          color="#228be6"
-          underConstruction={true}
-        />
-        <Box style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginLeft: 64 }} />
-        <SettingsCard
-          icon={IconNetwork}
-          title="Zigbee"
-          description="Low-power mesh network"
-          path="/settings/zigbee"
-          color="#f03e3e"
-          underConstruction={true}
-        />
-        <Box style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginLeft: 64 }} />
-        <SettingsCard
-          icon={IconDeviceDesktop}
-          title="Thread"
-          description="Mesh network often used for Matter devices"
-          path="/settings/thread"
-          color="#fd7e14"
-          underConstruction={true}
-        />
-        <Box style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginLeft: 64 }} />
-        <SettingsCard
-          icon={IconRadio}
-          title="Bluetooth"
-          description="Local device connectivity"
-          path="/settings/bluetooth"
-          color="#228be6"
-          underConstruction={true}
-        />
-        <Box style={{ height: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginLeft: 64 }} />
-        <SettingsCard
-          icon={IconQrcode}
-          title="Tags"
-          description="Set up NFC tags and QR codes"
-          path="/settings/tags"
-          color="#868e96"
-          underConstruction={true}
-        />
-      </SettingsSection>
-      
-      <SettingsSection title="People & Tools">
+      <SettingsSection>
         <SettingsCard
           icon={IconUsers}
-          title="People"
+          title="Users"
           description="Manage who can access your home"
-          path="/settings/people"
+          path="/settings/users"
           color="#228be6"
           underConstruction={true}
         />

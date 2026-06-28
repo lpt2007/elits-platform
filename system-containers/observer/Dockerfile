@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# Namesti nvidia-smi če je na voljo
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    gnupg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install psutil fastapi uvicorn requests docker
 
 COPY main.py /app/main.py

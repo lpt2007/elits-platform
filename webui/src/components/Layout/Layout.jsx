@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { Box, Group } from '@mantine/core'
 import Sidebar from '../Sidebar/Sidebar'
 
@@ -21,6 +21,7 @@ const routeTitles = {
 export default function Layout() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const location = useLocation()
+  const navigate = useNavigate()
 
   const getTitle = () => {
     const path = location.pathname
@@ -30,9 +31,17 @@ export default function Layout() {
     return routeTitles[path] || 'Elits Platform'
   }
 
+  // Določi katero sekcijo prikazujemo
+  const currentSection = location.pathname.startsWith('/settings') ? 'settings' : 'dashboard'
+
   return (
     <Group gap={0} style={{ minHeight: '100vh' }}>
-      <Sidebar open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+      <Sidebar 
+        open={sidebarOpen} 
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        currentSection={currentSection}
+        onNavigate={navigate}
+      />
       <Box
         style={({ colors }) => ({
           flex: 1,

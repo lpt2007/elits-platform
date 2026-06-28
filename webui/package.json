@@ -1,6 +1,7 @@
 {
   "name": "elits-webui",
-  "version": "0.2.0",
+  "private": true,
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "dev": "vite",

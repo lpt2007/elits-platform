@@ -6,10 +6,10 @@ import { useNavigate } from 'react-router-dom'
 
 export default function Updates() {
   const navigate = useNavigate()
-  
-  const { data: addons } = useQuery({
-    queryKey: ['store'],
-    queryFn: () => axios.get('/api/store').then(res => res.data),
+
+  const { data: addons, isLoading } = useQuery({
+    queryKey: ['updates'],
+    queryFn: () => axios.get('/observer/updates').then(res => res.data),
   })
 
   const updates = addons?.filter(a => a.update_available) || []
@@ -22,8 +22,12 @@ export default function Updates() {
         </ActionIcon>
         <Title order={2}>Updates</Title>
       </Group>
-      
-      {updates.length === 0 ? (
+
+      {isLoading ? (
+        <Card shadow="sm" p="lg" radius="md">
+          <Text c="dimmed">Loading...</Text>
+        </Card>
+      ) : updates.length === 0 ? (
         <Card shadow="sm" p="lg" radius="md">
           <Text c="dimmed">All addons are up to date</Text>
         </Card>
@@ -33,7 +37,7 @@ export default function Updates() {
             <Group justify="space-between">
               <div>
                 <Text fw={700}>{addon.name}</Text>
-                <Text size="sm" c="dimmed">v{addon.installed_version} → v{addon.version}</Text>
+                <Text size="sm" c="dimmed">v{addon.current_version} → v{addon.available_version}</Text>
               </div>
               <Button size="xs">Update</Button>
             </Group>

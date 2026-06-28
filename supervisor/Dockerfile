@@ -6,7 +6,8 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
+COPY entity_registry/ ./entity_registry/
 
-EXPOSE 1977
+EXPOSE 80
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "1977"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "80"]

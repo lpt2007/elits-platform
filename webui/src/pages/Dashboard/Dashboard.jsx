@@ -1,82 +1,75 @@
-import { Container, Title, Card, Text, Group, SimpleGrid, Badge, ActionIcon } from '@mantine/core'
-import { IconCpu, IconDatabase, IconServer, IconActivity } from '@tabler/icons-react'
-import { useQuery } from '@tanstack/react-query'
-import axios from 'axios'
+import { useState } from 'react'
+import { Box } from '@mantine/core'
 
 export default function Dashboard() {
-  const { data: systemStats } = useQuery({
-    queryKey: ['system-stats'],
-    queryFn: () => axios.get('/observer/system').then(res => res.data),
-    refetchInterval: 5000,
-  })
+  const [error, setError] = useState(null)
+  const [loading, setLoading] = useState(true)
+  
+  const haProxyUrl = 'http://192.168.200.201:8124'
 
-  const { data: addons } = useQuery({
-    queryKey: ['addons'],
-    queryFn: () => axios.get('/api/addons').then(res => res.data),
-  })
+  const handleIframeLoad = () => {
+    setLoading(false)
+  }
 
-  const runningAddons = addons?.filter(a => a.state === 'running') || []
+  const handleIframeError = () => {
+    setError('Failed to load Home Assistant')
+    setLoading(false)
+  }
 
   return (
-    <Container size="xl" py="xl" px="xl">
-      <Title order={2} mb="xl">Dashboard</Title>
+    <Box style={{
+      position: 'absolute',
+      top: 0,
+      left: 200,
+      right: 0,
+      bottom: 0,
+      backgroundColor: '#111'
+    }}>
+      {loading && (
+        <Box style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1001,
+          backgroundColor: 'rgba(0,0,0,0.9)',
+          padding: '40px',
+          borderRadius: '12px',
+          textAlign: 'center'
+        }}>
+          <div style={{ color: 'white', fontSize: '18px' }}>Loading...</div>
+        </Box>
+      )}
 
-      <SimpleGrid cols={4} mb="xl">
-        <Card shadow="sm" p="lg" radius="md">
-          <Group>
-            <IconCpu size={32} color="#228be6" />
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>CPU</Text>
-              <Text fw={700} size="xl">{systemStats?.cpu_percent?.toFixed(1) || 0}%</Text>
-            </div>
-          </Group>
-        </Card>
+      {error && (
+        <Box style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          zIndex: 1001,
+          color: 'red',
+          backgroundColor: 'rgba(0,0,0,0.9)',
+          padding: '20px',
+          borderRadius: '8px'
+        }}>
+          {error}
+        </Box>
+      )}
 
-        <Card shadow="sm" p="lg" radius="md">
-          <Group>
-            <IconServer size={32} color="#40c057" />
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Memory</Text>
-              <Text fw={700} size="xl">{systemStats?.memory?.percent?.toFixed(1) || 0}%</Text>
-            </div>
-          </Group>
-        </Card>
-
-        <Card shadow="sm" p="lg" radius="md">
-          <Group>
-            <IconDatabase size={32} color="#fd7e14" />
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Disk</Text>
-              <Text fw={700} size="xl">{systemStats?.disk?.percent?.toFixed(1) || 0}%</Text>
-            </div>
-          </Group>
-        </Card>
-
-        <Card shadow="sm" p="lg" radius="md">
-          <Group>
-            <IconActivity size={32} color="#845ef7" />
-            <div>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>Addons</Text>
-              <Text fw={700} size="xl">{runningAddons.length} running</Text>
-            </div>
-          </Group>
-        </Card>
-      </SimpleGrid>
-
-      <Card shadow="sm" p="lg" radius="md">
-        <Title order={4} mb="md">Active Addons</Title>
-        <SimpleGrid cols={3}>
-          {runningAddons.map(addon => (
-            <Card key={addon.slug} shadow="xs" p="md" radius="sm">
-              <Group justify="space-between" mb="xs">
-                <Text fw={600}>{addon.name}</Text>
-                <Badge color="green" size="sm">{addon.state}</Badge>
-              </Group>
-              <Text size="xs" c="dimmed">v{addon.version}</Text>
-            </Card>
-          ))}
-        </SimpleGrid>
-      </Card>
-    </Container>
+      <iframe
+        src={`${haProxyUrl}/lovelace/0`}
+        onLoad={handleIframeLoad}
+        onError={handleIframeError}
+        style={{
+          width: '100%',
+          height: '100%',
+          border: 'none',
+          backgroundColor: '#111'
+        }}
+        title="Home Assistant Dashboard"
+        sandbox="allow-same-origin allow-scripts allow-popups allow-forms"
+      />
+    </Box>
   )
 }
