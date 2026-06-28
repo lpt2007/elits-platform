@@ -1,7 +1,7 @@
 # Elits Platform - Dogovorjena struktura
 
 **Datum dogovora:** 2026-06-24  
-**Verzija dokumenta:** 1.1.0
+**Verzija dokumenta:** 1.2.0
 
 ---
 
@@ -11,13 +11,14 @@
 **URL:** https://github.com/lpt2007/elits-platform
 
 Vsebuje:
-- webui/ - React frontend (Mantine UI)
-- supervisor/ - Python backend (addon management)
-- observer/ - Python backend (system monitoring)
-- system-containers/ - DNS, CLI, ostali sistemski kontejnerji
-- scripts/ - deployment in maintenance skripte
-- docs/ - dokumentacija
-- STRUCTURE.md - ta dokument
+- **core/** - Glavne komponente sistema:
+  -  - Python backend (addon management)
+  -  - React frontend (Mantine UI)
+  -  - Python backend (system monitoring)
+- **system-containers/** - Pomožni sistemski kontejnerji (DNS, CLI, itd.)
+- **scripts/** - Deployment in maintenance skripte
+- **docs/** - Dokumentacija
+- **STRUCTURE.md** - Ta dokument
 
 ### 2. elits-platform-addons (vsi addon-i)
 **URL:** https://github.com/lpt2007/elits-platform-addons
@@ -40,9 +41,11 @@ Vsebuje:
 
     /root/
     ├── elits-platform/              (git repo - glavni sistem)
-    │   ├── webui/                  (React source)
-    │   ├── supervisor/             (Python source)
-    │   ├── system-containers/
+    │   ├── core/                   (glavne komponente)
+    │   │   ├── supervisor/
+    │   │   ├── webui/
+    │   │   └── observer/
+    │   ├── system-containers/      (pomožni kontejnerji)
     │   ├── scripts/
     │   └── STRUCTURE.md
     │
@@ -144,12 +147,12 @@ Vsak addon v elits-platform-addons mora imeti:
 ## 🚀 Deployment
 
 ### Development:
-    cd /root/elits-platform/webui
+    cd /root/elits-platform/core/webui
     npm run dev
 
 ### Production:
     cd /root/elits-platform
-    docker build -t elits-webui:latest ./webui
+    docker build -t elits-webui:latest ./core/webui
     docker run -d --name elits_webui -p 8081:80 elits-webui:latest
 
 ---
@@ -163,6 +166,8 @@ Vsak addon v elits-platform-addons mora imeti:
 - **Backup strategija**: dnevni backupi v /data/backup-data/
 - **Sistemski addon-i** so v system/ mapi
 - **Nesistemski addon-i** so v apps/ mapi
+- **core/** vsebuje glavne komponente (supervisor, webui, observer)
+- **system-containers/** vsebuje pomožne kontejnerje (DNS, CLI, itd.)
 
 ---
 
