@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends, status
+import os
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 import docker
@@ -90,6 +91,32 @@ entity_registry.add_listener(on_entity_change)
 ADDONS_DIR = Path("/data/elits/addons")
 OFFICIAL_ADDONS_DIR = Path("/opt/elits/addons")
 GITHUB_REPO = "lpt2007/elits-platform-addons"
+
+# Cache za GitHub API odgovore (5 minut TTL)
+_github_cache = {}
+_github_cache_time = {}
+GITHUB_CACHE_TTL = 300  # 5 minut
+
+def cached_github_request(url: str):
+    """Cache GitHub API requests za 5 minut"""
+    import time
+    current_time = time.time()
+    
+    # Preveri če imamo veljaven cache
+    if url in _github_cache and url in _github_cache_time:
+        if current_time - _github_cache_time[url] < GITHUB_CACHE_TTL:
+            return _github_cache[url]
+    
+    # Naredi nov request
+    response = requests.get(url, timeout=10)
+    
+    # Shrani v cache
+    _github_cache[url] = response
+    _github_cache_time[url] = current_time
+    
+    return response
+
+
 SYSTEM_CONTAINERS = ['supervisor', 'supervisor_test', 'webui', 'webui_test', 'dns', 'observer', 'cli']
 
 # ============ HA AUTHENTICATION ============
@@ -293,24 +320,43 @@ def load_manifest(slug: str, repo_dir: Path) -> Optional[Dict]:
     return None
 
 def fetch_github_addons() -> List[Dict]:
+    """Fetch addons from GitHub repository - supports system/ and apps/ structure"""
     try:
-        url = f"https://api.github.com/repos/{GITHUB_REPO}/contents"
-        response = requests.get(url, timeout=10)
-        if response.status_code != 200:
-            return []
-        
+        import base64
         addons = []
-        for item in response.json():
-            if item['type'] == 'dir':
-                slug = item['name']
-                manifest_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{slug}/elits-addon.json"
-                manifest_response = requests.get(manifest_url, timeout=10)
-                
-                if manifest_response.status_code == 200:
-                    import base64
-                    content = base64.b64decode(manifest_response.json()['content']).decode('utf-8')
-                    manifest_data = json.loads(content)
-                    addons.append(manifest_data)
+        
+        # Preveri oba direktorija: system/ in apps/
+        for category in ['system', 'apps']:
+            url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{category}"
+            response = cached_github_request(url)
+            
+            if response.status_code != 200:
+                logger.warning(f"Could not fetch {category}/ directory")
+                continue
+            
+            for item in response.json():
+                if item['type'] == 'dir':
+                    slug = item['name']
+                    
+                    # Poskusi config.json (novi format) ali elits-addon.json (stari format)
+                    for config_file in ['config.json', 'elits-addon.json']:
+                        manifest_url = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{category}/{slug}/{config_file}"
+                        manifest_response = cached_github_request(manifest_url)
+                        
+                        if manifest_response.status_code == 200:
+                            content = base64.b64decode(manifest_response.json()['content']).decode('utf-8')
+                            manifest_data = json.loads(content)
+                            
+                            # Dodaj manjkajoča polja z privzetimi vrednostmi
+                            manifest_data['type'] = category  # system ali apps
+                            manifest_data['category'] = manifest_data.get('category', category.title())
+                            manifest_data['stage'] = manifest_data.get('stage', 'stable')
+                            manifest_data['path'] = f"{category}/{slug}"  # Pot za namestitev
+                            
+                            addons.append(manifest_data)
+                            break  # Našel config, ne išči več
+        
+        logger.info(f"Found {len(addons)} addons on GitHub")
         return addons
     except Exception as e:
         logger.error(f"Error fetching GitHub addons: {e}")
@@ -552,31 +598,122 @@ async def get_store():
 
 @app.post("/api/store/install")
 async def install_addon(request: dict):
+    """Install addon from GitHub repository using docker-py SDK"""
+    import subprocess
+    import shutil
+    import tarfile
+    import io
+    
     docker_client = get_docker_client()
     slug = request.get('slug')
+    
+    # Pridobi manifest iz GitHub
     github_addons = fetch_github_addons()
     manifest_data = next((a for a in github_addons if a['slug'] == slug), None)
     if not manifest_data:
-        raise HTTPException(status_code=404, detail="Addon not found")
+        raise HTTPException(status_code=404, detail="Addon not found in GitHub repository")
+    
+    # Preveri če je že nameščen
     try:
         docker_client.containers.get(f"elits_{slug}")
         raise HTTPException(status_code=400, detail="Addon already installed")
     except docker.errors.NotFound:
         pass
+    
     try:
+        # Pot iz GitHub (npr. "system/postgresql")
+        addon_path = manifest_data.get('path', f"{manifest_data.get('type', 'apps')}/{slug}")
+        
+        # Kloniraj repo v /tmp
+        temp_dir = f"/tmp/elits-addon-{slug}"
+        if os.path.exists(temp_dir):
+            shutil.rmtree(temp_dir)
+        
+        logger.info(f"Cloning addon from GitHub: {addon_path}")
+        subprocess.run([
+            "git", "clone", "--depth", "1", "--filter=blob:none", "--sparse",
+            f"https://github.com/{GITHUB_REPO}.git", temp_dir
+        ], check=True, capture_output=True)
+        
+        # Checkout samo potrebni direktorij
+        subprocess.run(["git", "sparse-checkout", "set", addon_path],
+                      cwd=temp_dir, check=True, capture_output=True)
+        
+        addon_dir = os.path.join(temp_dir, addon_path)
+        
+        # Zgradi Docker image z docker-py SDK
+        image_name = f"elits-{slug}:latest"
+        logger.info(f"Building Docker image: {image_name}")
+        
+        image, build_logs = docker_client.images.build(
+            path=addon_dir,
+            tag=image_name,
+            rm=True,
+            forcerm=True
+        )
+        
+        # Log build output
+        for log in build_logs:
+            if 'stream' in log:
+                logger.debug(log['stream'].strip())
+        
+        # Pripravi ports (preslikaj iz config.json formata)
+        ports = {}
+        for container_port, host_port in manifest_data.get('ports', {}).items():
+            # container_port je npr. "5432/tcp", host_port je npr. 5432
+            ports[container_port] = host_port
+        
+        # Pripravi environment
+        environment = {}
+        options = manifest_data.get('options', {})
+        for env_key, env_value in manifest_data.get('environment', {}).items():
+            # Zamenjaj ${option_name} z dejansko vrednostjo
+            if env_value.startswith('${') and env_value.endswith('}'):
+                option_name = env_value[2:-1]
+                environment[env_key] = options.get(option_name, '')
+            else:
+                environment[env_key] = env_value
+        
+        # Pripravi volumes
+        volumes = {
+            f"/data/addons-data/{slug}": {'bind': '/data', 'mode': 'rw'}
+        }
+        
+        # Ustvari direktorij za podatke
+        os.makedirs(f"/data/addons-data/{slug}", exist_ok=True)
+        
+        # Zaženi kontejner
+        logger.info(f"Starting container: elits_{slug}")
         container = docker_client.containers.run(
-            manifest_data['image'],
+            image_name,
             name=f"elits_{slug}",
             detach=True,
-            ports=manifest_data.get('ports', {}),
-            environment=manifest_data.get('environment', {}),
-            volumes=manifest_data.get('volumes', {}),
+            ports=ports,
+            environment=environment,
+            volumes=volumes,
+            network="elits-net",
             restart_policy={"Name": "unless-stopped"},
         )
+        
+        # Počisti temp directory
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        
+        # Registriraj entity v HA
         await register_addon_entities()
+        
+        logger.info(f"✅ Addon {slug} installed successfully")
         return {"status": "installed", "slug": slug, "container_id": container.id}
+    
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to clone addon: {e.stderr.decode()}")
+        raise HTTPException(status_code=500, detail=f"Clone failed: {e.stderr.decode()}")
+    except docker.errors.BuildError as e:
+        logger.error(f"Failed to build Docker image: {e}")
+        raise HTTPException(status_code=500, detail=f"Build failed: {str(e)}")
     except Exception as e:
+        logger.error(f"Error installing addon: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/api/updates")
 async def check_updates():
