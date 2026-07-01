@@ -876,6 +876,250 @@ async def get_ha_lovelace_card(card_type: str):
 
 # ============ ADDON LOGS ============
 
+
+# ============ BACKUP/RESTORE ============
+
+@app.post("/api/backup/addon/{slug}")
+async def backup_addon(slug: str):
+    """Backup addon - Docker image + data + config"""
+    import tarfile
+    from datetime import datetime
+    
+    docker_client = get_docker_client()
+    
+    try:
+        # Preveri če addon obstaja
+        container = docker_client.containers.get(f"elits_{slug}")
+    except docker.errors.NotFound:
+        raise HTTPException(status_code=404, detail="Addon not found")
+    
+    try:
+        # Ustvari backup direktorij
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        backup_dir = f"/data/backup-data/addons/{slug}/{timestamp}"
+        os.makedirs(backup_dir, exist_ok=True)
+        
+        logger.info(f"Starting backup for {slug} at {backup_dir}")
+        
+        # 1. Backup Docker image - uporabi dejanski image kontejnerja
+        container_image = container.image.tags[0] if container.image.tags else str(container.image)  # npr. "elits-postgresql:latest"
+        image_tar = f"{backup_dir}/image.tar"
+        
+        logger.info(f"Exporting Docker image: {container_image}")
+        try:
+            image = docker_client.images.get(container_image)
+            with open(image_tar, 'wb') as f:
+                for chunk in image.save(named=True):
+                    f.write(chunk)
+        except docker.errors.NotFound:
+            logger.warning(f"Image {container_image} not found locally")
+            raise HTTPException(status_code=404, detail=f"Image {container_image} not found")
+        
+        # Shrani ime image-a za restore
+        with open(f"{backup_dir}/image_name.txt", 'w') as f:
+            f.write(container_image)
+        
+        # 2. Backup data volume
+        data_dir = f"/data/addons-data/{slug}"
+        data_tar = f"{backup_dir}/data.tar.gz"
+        
+        if os.path.exists(data_dir):
+            logger.info(f"Backing up data: {data_dir}")
+            with tarfile.open(data_tar, "w:gz") as tar:
+                tar.add(data_dir, arcname=os.path.basename(data_dir))
+        
+        # 3. Backup config iz GitHub
+        github_addons = fetch_github_addons()
+        addon_config = next((a for a in github_addons if a['slug'] == slug), None)
+        
+        if addon_config:
+            config_file = f"{backup_dir}/config.json"
+            with open(config_file, 'w') as f:
+                json.dump(addon_config, f, indent=2)
+        
+        # 4. Ustvari metadata
+        metadata = {
+            "slug": slug,
+            "timestamp": timestamp,
+            "image": container_image,
+            "image_id": image.id,
+            "backup_dir": backup_dir,
+            "size_mb": sum(os.path.getsize(os.path.join(backup_dir, f)) for f in os.listdir(backup_dir) if os.path.isfile(os.path.join(backup_dir, f))) / 1024 / 1024
+        }
+        
+        metadata_file = f"{backup_dir}/metadata.json"
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        logger.info(f"✅ Backup completed for {slug}: {metadata['size_mb']:.2f} MB")
+        return {"status": "success", "backup_dir": backup_dir, "metadata": metadata}
+    
+    except Exception as e:
+        logger.error(f"Backup failed for {slug}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/restore/addon/{slug}")
+async def restore_addon(slug: str, backup_timestamp: str = None):
+    """Restore addon from backup"""
+    import subprocess
+    import tarfile
+    
+    docker_client = get_docker_client()
+    
+    try:
+        # Najdi backup
+        backup_base = f"/data/backup-data/addons/{slug}"
+        
+        if not os.path.exists(backup_base):
+            raise HTTPException(status_code=404, detail="No backups found")
+        
+        if backup_timestamp:
+            backup_dir = f"{backup_base}/{backup_timestamp}"
+        else:
+            # Uporabi najnovejši backup
+            backups = sorted(os.listdir(backup_base), reverse=True)
+            if not backups:
+                raise HTTPException(status_code=404, detail="No backups found")
+            backup_dir = f"{backup_base}/{backups[0]}"
+        
+        if not os.path.exists(backup_dir):
+            raise HTTPException(status_code=404, detail="Backup not found")
+        
+        logger.info(f"Restoring {slug} from {backup_dir}")
+        
+        # 1. Naloži metadata
+        metadata_file = f"{backup_dir}/metadata.json"
+        with open(metadata_file, 'r') as f:
+            metadata = json.load(f)
+        
+        # 2. Ustavi in odstrani obstoječi kontejner
+        try:
+            container = docker_client.containers.get(f"elits_{slug}")
+            logger.info(f"Stopping existing container: elits_{slug}")
+            container.stop()
+            container.remove()
+        except docker.errors.NotFound:
+            pass
+        
+        # 3. Naloži Docker image
+        image_tar = f"{backup_dir}/image.tar"
+        image_name_file = f"{backup_dir}/image_name.txt"
+        
+        if os.path.exists(image_name_file):
+            with open(image_name_file, 'r') as f:
+                container_image = f.read().strip()
+            logger.info(f"Expected image: {container_image}")
+        
+        if os.path.exists(image_tar):
+            logger.info(f"Loading Docker image from {image_tar}")
+            with open(image_tar, 'rb') as f:
+                docker_client.images.load(f.read())
+        else:
+            # Če ni image.tar, poskusi pullati originalni image
+            if os.path.exists(image_name_file):
+                logger.info(f"Pulling image: {container_image}")
+                docker_client.images.pull(container_image)
+        
+        # 4. Restore data volume
+        data_tar = f"{backup_dir}/data.tar.gz"
+        data_dir = f"/data/addons-data/{slug}"
+        
+        if os.path.exists(data_tar):
+            logger.info(f"Restoring data to {data_dir}")
+            os.makedirs(data_dir, exist_ok=True)
+            with tarfile.open(data_tar, "r:gz") as tar:
+                tar.extractall(path="/data/addons-data/")
+        
+        # 5. Naloži config
+        config_file = f"{backup_dir}/config.json"
+        if os.path.exists(config_file):
+            with open(config_file, 'r') as f:
+                config = json.load(f)
+            
+            # Pripravi environment
+            environment = {}
+            options = config.get('options', {})
+            for env_key, env_value in config.get('environment', {}).items():
+                if env_value.startswith('${') and env_value.endswith('}'):
+                    option_name = env_value[2:-1]
+                    environment[env_key] = options.get(option_name, '')
+                else:
+                    environment[env_key] = env_value
+            
+            # Pripravi ports
+            ports = {}
+            for container_port, host_port in config.get('ports', {}).items():
+                ports[container_port] = host_port
+            
+            # Pripravi volumes
+            volumes = {
+                f"/data/addons-data/{slug}": {'bind': '/data', 'mode': 'rw'}
+            }
+            
+            # 6. Zaženi kontejner
+            image_name = metadata['image']
+            logger.info(f"Starting container: elits_{slug}")
+            container = docker_client.containers.run(
+                image_name,
+                name=f"elits_{slug}",
+                detach=True,
+                ports=ports,
+                environment=environment,
+                volumes=volumes,
+                network="elits-net",
+                restart_policy={"Name": "unless-stopped"},
+            )
+            
+            # Registriraj entity v HA
+            await register_addon_entities()
+            
+            logger.info(f"✅ Restore completed for {slug}")
+            return {"status": "success", "backup_dir": backup_dir, "container_id": container.id}
+    
+    except Exception as e:
+        logger.error(f"Restore failed for {slug}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/backups")
+async def list_backups():
+    """List all backups"""
+    backups = []
+    backup_base = "/data/backup-data/addons"
+    
+    if not os.path.exists(backup_base):
+        return backups
+    
+    for slug in os.listdir(backup_base):
+        slug_dir = os.path.join(backup_base, slug)
+        if os.path.isdir(slug_dir):
+            for timestamp in os.listdir(slug_dir):
+                backup_dir = os.path.join(slug_dir, timestamp)
+                metadata_file = os.path.join(backup_dir, "metadata.json")
+                
+                if os.path.exists(metadata_file):
+                    with open(metadata_file, 'r') as f:
+                        metadata = json.load(f)
+                    backups.append(metadata)
+    
+    # Razvrsti po timestamp (najnovejši prvi)
+    backups.sort(key=lambda x: x['timestamp'], reverse=True)
+    return backups
+
+@app.delete("/api/backup/{slug}/{timestamp}")
+async def delete_backup(slug: str, timestamp: str):
+    """Delete specific backup"""
+    backup_dir = f"/data/backup-data/addons/{slug}/{timestamp}"
+    
+    if not os.path.exists(backup_dir):
+        raise HTTPException(status_code=404, detail="Backup not found")
+    
+    import shutil
+    shutil.rmtree(backup_dir)
+    
+    logger.info(f"✅ Backup deleted: {slug}/{timestamp}")
+    return {"status": "deleted", "backup_dir": backup_dir}
+
+
 @app.get("/api/addons/{slug}/logs")
 async def get_addon_logs(slug: str):
     """Pridobi loge za addon"""
